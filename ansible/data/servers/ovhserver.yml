@@ -1,6 +1,7 @@
-server_name: server1
+server_name: ovhserver
 ssh_user: ubuntu
-ssh_secret_name: PROD_SERVER1_SSH_KEY
+ssh_secret_name: OVHSERVER_SSH_KEY
+public_ip: 51.77.147.233
 
 firewall_extra_ports: []
 

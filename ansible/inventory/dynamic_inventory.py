@@ -17,7 +17,7 @@ for filename in os.listdir(servers_dir):
             name = data["server_name"]
             all_group["hosts"].append(name)
             inventory["_meta"]["hostvars"][name] = {
-                "ansible_host": data.get("public_ip", name),  # or use Terraform output
+                "ansible_host": data.get("public_ip", name),
                 "ansible_user": data["ssh_user"],
             }
 
