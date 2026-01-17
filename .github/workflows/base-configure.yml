@@ -66,11 +66,9 @@ jobs:
 
       - name: Validate inventory host exists
         run: |
-            HOST_COUNT=$(ansible-playbook \
+            HOST_COUNT=$(ansible-inventory \
             -i ansible/inventory/dynamic_inventory.py \
-            --list-hosts all \
-            --limit "${{ matrix.server }}" \
-            | grep -E '^\s+[^ ]' | wc -l)
+            --list-hosts "${{ matrix.server }}" 2>/dev/null | tail -n +2 | wc -l)
 
             if [ "$HOST_COUNT" -eq 0 ]; then
             echo "ERROR: No hosts matched for ${{ matrix.server }}"
