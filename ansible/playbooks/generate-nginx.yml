@@ -50,7 +50,7 @@
   loop_control:
     loop_var: item
   template:
-    src: ../../templates/nginx-site.j2
+    src: ../templates/nginx-site.j2
     dest: "/etc/nginx/sites-available/{{ app.name }}-{{ item.env }}.conf"
     mode: '0644'
   when: item.domain | length > 0
@@ -74,7 +74,7 @@
   loop_control:
     loop_var: item
   template:
-    src: ../../templates/nginx-extra.j2
+    src: ../templates/nginx-extra.j2
     dest: "/etc/nginx/sites-available/extra-{{ item.domain | replace('.', '-') }}.conf"
     mode: '0644'
   when: item.domain is defined and item.domain | length > 0
