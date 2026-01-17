@@ -51,22 +51,28 @@ jobs:
       - name: Find target servers for this app
         id: targets
         run: |
-          python3 << 'PY'
-          import yaml, os
-          repo = "${{ github.event.client_payload.app_repo }}"
-          servers = []
-          for f in os.listdir("ansible/data/servers"):
-              if f.endswith(".yml"):
-                  with open(f"ansible/data/servers/{f}") as file:
-                      data = yaml.safe_load(file) or {}
-                      if any(app.get("repo") == repo for app in data.get("apps", [])):
-                          server_name = data.get("server_name")
-                          if server_name:
-                              servers.append(server_name)
-          servers_str = ','.join(servers)
-          print(f"::set-output name=servers::{servers_str}")
-          PY
+            python3 << 'PY'
+            import yaml, os
 
+            # Get the app repository from the dispatch payload
+            repo = "${{ github.event.client_payload.app_repo }}"
+            print("App repository from payload:", repo)  # <-- print it here
+
+            servers = []
+            for f in os.listdir("ansible/data/servers"):
+                if f.endswith(".yml"):
+                    with open(f"ansible/data/servers/{f}") as file:
+                        data = yaml.safe_load(file) or {}
+                        if any(app.get("repo") == repo for app in data.get("apps", [])):
+                            server_name = data.get("server_name")
+                            if server_name:
+                                servers.append(server_name)
+
+            servers_str = ','.join(servers)
+            print("Target servers found:", servers_str)
+            print(f"::set-output name=servers::{servers_str}")
+            PY
+            
   deploy:
     needs: [generate-matrix, prepare]
     if: needs.prepare.outputs.servers != ''
