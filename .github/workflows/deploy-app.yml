@@ -1,0 +1,123 @@
+name: Deploy App (from repository_dispatch)
+
+on:
+  repository_dispatch:
+    types: [deploy-app]
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build static matrix with custom SSH secret names
+        id: build
+        run: |
+          python3 << 'PY'
+          import yaml, json, os
+
+          servers_dir = "ansible/data/servers"
+          matrix_entries = []
+
+          for filename in os.listdir(servers_dir):
+              if filename.endswith(".yml"):
+                  path = os.path.join(servers_dir, filename)
+                  with open(path) as f:
+                      data = yaml.safe_load(f) or {}
+                      server_name = data.get("server_name")
+                      ssh_secret = data.get("ssh_secret_name")
+                      if server_name and ssh_secret:
+                          matrix_entries.append({
+                              "server": server_name,
+                              "secret_name": ssh_secret
+                          })
+
+          matrix_json = json.dumps({"include": matrix_entries})
+          print(f"::set-output name=matrix::{matrix_json}")
+          PY
+
+  prepare:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    outputs:
+      servers: ${{ steps.targets.outputs.servers }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find target servers for this app
+        id: targets
+        run: |
+          python3 << 'PY'
+          import yaml, os
+          repo = "${{ github.event.client_payload.app_repo }}"
+          servers = []
+          for f in os.listdir("ansible/data/servers"):
+              if f.endswith(".yml"):
+                  with open(f"ansible/data/servers/{f}") as file:
+                      data = yaml.safe_load(file) or {}
+                      if any(app.get("repo") == repo for app in data.get("apps", [])):
+                          server_name = data.get("server_name")
+                          if server_name:
+                              servers.append(server_name)
+          servers_str = ','.join(servers)
+          print(f"::set-output name=servers::{servers_str}")
+          PY
+
+  deploy:
+    needs: [generate-matrix, prepare]
+    if: needs.prepare.outputs.servers != ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup tools
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install ansible yq
+          sudo apt-get update && sudo apt-get install -y jq docker-compose-plugin
+
+      - name: Decode docker-compose.yml
+        run: |
+          echo "${{ github.event.client_payload.docker_compose_b64 }}" | base64 -d > /tmp/docker-compose-raw.yml
+
+      - name: Create .env file
+        run: |
+          # Start with IMAGE_TAG (not a secret)
+          echo "IMAGE_TAG=${{ github.event.client_payload.image_tag }}" > /tmp/.env
+
+          # Append all secrets from payload
+          echo '${{ toJson(github.event.client_payload.env_secrets) }}' | \
+            jq -r 'to_entries[] | "\(.key)=\(.value)"' >> /tmp/.env
+            
+      - name: Render final docker-compose
+        run: |
+          docker compose -f /tmp/docker-compose-raw.yml --env-file /tmp/.env config > /tmp/docker-compose.yml
+
+      - name: Deploy only if this matrix server is in the target list
+        if: ${{ contains(needs.prepare.outputs.servers, matrix.server) }}
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: False
+          SSH_PRIVATE_KEY: ${{ secrets[format('{0}', matrix.secret_name)] }}
+        run: |
+          app_name=$(basename "${{ github.event.client_payload.app_repo }}")
+          env="${{ github.event.client_payload.env }}"
+          echo "Deploying $app_name ($env) to ${{ matrix.server }}"
+          ansible-playbook ansible/playbooks/deploy-app.yml \
+            --extra-vars "target_server=${{ matrix.server }}" \
+            --extra-vars "app_name=$app_name" \
+            --extra-vars "env=$env" \
+            --extra-vars "compose_file=/tmp/docker-compose.yml" \
+            --extra-vars "env_file=/tmp/.env" \
+            --private-key <(echo "$SSH_PRIVATE_KEY")

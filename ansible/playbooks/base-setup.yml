@@ -1,0 +1,47 @@
+---
+- name: Base server setup and Nginx config
+  hosts: all
+  become: yes
+  vars_files:
+    - ../data/common.yml
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install common packages
+      apt:
+        name: "{{ common_packages }}"
+        state: present
+
+    - name: Enable and configure UFW
+      ufw:
+        state: enabled
+        policy: deny
+
+    - name: Allow essential ports
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+      loop:
+        - 22
+        - 80
+        - 443
+
+    - name: Allow server-specific extra ports
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+      loop: "{{ firewall_extra_ports | default([]) }}"
+
+    - name: Create web root for certbot
+      file:
+        path: /var/www/letsencrypt
+        state: directory
+        mode: '0755'
+
+    - name: Generate Nginx sites for all apps and environments
+      include_tasks: ../playbooks/generate-nginx.yml
+      loop: "{{ apps }}"
+      loop_control:
+        loop_var: app

@@ -1,0 +1,115 @@
+name: Rollback App (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_repo:
+        description: 'Full repo name (e.g. org/zanaka)'
+        required: true
+        type: string
+      env:
+        description: 'Environment (prod or stage)'
+        required: true
+        type: choice
+        options:
+          - prod
+          - stage
+      previous_tag:
+        description: 'Full image tag to rollback to (e.g. stevendegwa/zanaka:prod-abcd123)'
+        required: true
+        type: string
+      server:
+        description: 'Target server name (must match server_name in ansible/data/servers/*.yml)'
+        required: true
+        type: string
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build static matrix with custom SSH secret names
+        id: build
+        run: |
+          python3 << 'PY'
+          import yaml, json, os
+
+          servers_dir = "ansible/data/servers"
+          matrix_entries = []
+
+          for filename in os.listdir(servers_dir):
+              if filename.endswith(".yml"):
+                  path = os.path.join(servers_dir, filename)
+                  with open(path) as f:
+                      data = yaml.safe_load(f) or {}
+                      server_name = data.get("server_name")
+                      ssh_secret = data.get("ssh_secret_name")
+                      if server_name and ssh_secret:
+                          matrix_entries.append({
+                              "server": server_name,
+                              "secret_name": ssh_secret
+                          })
+
+          matrix_json = json.dumps({"include": matrix_entries})
+          print(f"::set-output name=matrix::{matrix_json}")
+          PY
+
+  rollback:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+      fail-fast: false
+      max-parallel: 1  # Safe for manual rollback
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python & Ansible
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Validate selected server matches matrix
+        if: ${{ github.event.inputs.server == matrix.server }}
+        run: |
+          echo "Rollback targeting ${{ matrix.server }} — proceeding"
+
+      - name: Create rollback .env file
+        if: ${{ github.event.inputs.server == matrix.server }}
+        run: |
+          cat << EOF > /tmp/.env
+          IMAGE_TAG=${{ inputs.previous_tag }}
+          NODE_ENV=${{ inputs.env == 'prod' && 'production' || 'staging' }}
+          EOF
+
+      - name: Perform rollback on ${{ matrix.server }}
+        if: ${{ github.event.inputs.server == matrix.server }}
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: False
+          SSH_PRIVATE_KEY: ${{ secrets[format('{0}', matrix.secret_name)] }}
+        run: |
+          app_name=$(basename "${{ inputs.app_repo }}")
+
+          echo "=== ROLLING BACK ==="
+          echo "App: $app_name"
+          echo "Environment: ${{ inputs.env }}"
+          echo "Server: ${{ matrix.server }}"
+          echo "Image Tag: ${{ inputs.previous_tag }}"
+          echo "===================="
+
+          ansible-playbook ansible/playbooks/deploy-app.yml \
+            --limit "${{ matrix.server }}" \
+            --extra-vars "app_name=$app_name" \
+            --extra-vars "env=${{ inputs.env }}" \
+            --extra-vars "env_file=/tmp/.env" \
+            --extra-vars "force_image_tag=${{ inputs.previous_tag }}" \
+            --private-key <(echo "$SSH_PRIVATE_KEY")

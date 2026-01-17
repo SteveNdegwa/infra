@@ -1,0 +1,72 @@
+name: Base Server Configuration
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'ansible/data/**'
+      - 'ansible/playbooks/base-setup.yml'
+      - 'ansible/playbooks/generate-nginx.yml'
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build static matrix with custom SSH secret names
+        id: build
+        run: |
+          python3 << 'PY'
+          import yaml, json, os
+
+          servers_dir = "ansible/data/servers"
+          matrix_entries = []
+
+          for filename in os.listdir(servers_dir):
+              if filename.endswith(".yml"):
+                  path = os.path.join(servers_dir, filename)
+                  with open(path) as f:
+                      data = yaml.safe_load(f) or {}
+                      server_name = data.get("server_name")
+                      ssh_secret = data.get("ssh_secret_name")
+                      if server_name and ssh_secret:
+                          matrix_entries.append({
+                              "server": server_name,
+                              "secret_name": ssh_secret
+                          })
+
+          matrix_json = json.dumps({"include": matrix_entries})
+          print(f"::set-output name=matrix::{matrix_json}")
+          PY
+
+  configure:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python & Ansible
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Configure server
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: False
+          SSH_PRIVATE_KEY: ${{ secrets[format('{0}', matrix.secret_name)] }}
+        run: |
+          echo "Configuring ${{ matrix.server }}"
+          ansible-playbook ansible/playbooks/base-setup.yml \
+            --limit "${{ matrix.server }}" \
+            --private-key <(echo "$SSH_PRIVATE_KEY")

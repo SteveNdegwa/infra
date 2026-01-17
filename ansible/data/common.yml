@@ -1,0 +1,7 @@
+common_packages:
+  - nginx
+  - docker.io
+  - docker-compose-plugin
+  - ufw
+  - certbot
+  - python3-certbot-nginx

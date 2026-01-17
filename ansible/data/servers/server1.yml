@@ -1,0 +1,26 @@
+server_name: server1
+ssh_user: ubuntu
+ssh_secret_name: PROD_SERVER1_SSH_KEY
+
+firewall_extra_ports: []
+
+apps:
+  - name: zanaka
+    repo: https://github.com/stevendegwa/zanaka.git
+    environments:
+      prod:
+        domain: api.mchangohub.com 
+        port: 8000
+
+# Additional internal/admin tools exposed via subdomains
+# These are NOT full apps with their own repo/deploy — just reverse proxies
+extra_domains:
+  - domain: flower.mchangohub.com
+    proxy_port: 5555
+  - domain: portainer.mchangohub.com
+    proxy_port: 9000
+  - domain: grafana.mchangohub.com
+    proxy_port: 3000
+  - domain: rabbit.mchangohub.com
+    proxy_port: 15672
+    basic_auth: true
