@@ -47,6 +47,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+    
+      - name: Debug repository payload
+        run: |
+            echo "Payload: ${{ toJson(github.event) }}"
+            echo "App repo: ${{ github.event.client_payload.app_repo }}"
 
       - name: Find target servers for this app
         id: targets
