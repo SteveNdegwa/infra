@@ -97,7 +97,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install ansible yq
-          sudo apt-get update && sudo apt-get install -y jq docker-compose-plugin
+          sudo apt-get update && sudo apt-get install -y jq docker-compose
 
       - name: Decode docker-compose.yml
         run: |
