@@ -4,6 +4,8 @@
   become: yes
   vars_files:
     - ../data/common.yml
+  handlers:
+    - include_tasks: handlers.yml
   tasks:
     - name: Update apt cache
       apt:
