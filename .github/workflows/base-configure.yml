@@ -67,12 +67,19 @@ jobs:
 
       - name: Configure server
         env:
-          ANSIBLE_HOST_KEY_CHECKING: False
-          SSH_PRIVATE_KEY: ${{ secrets[format('{0}', matrix.secret_name)] }}
+            ANSIBLE_HOST_KEY_CHECKING: False
+            SSH_PRIVATE_KEY: ${{ secrets[format('{0}', matrix.secret_name)] }}
         run: |
-          echo "Configuring ${{ matrix.server }}"
+            echo "Configuring ${{ matrix.server }}"
 
-          ansible-playbook ansible/playbooks/base-setup.yml \
+            # Write key to a temp file
+            KEY_FILE=$(mktemp)
+            chmod 600 "$KEY_FILE"
+            echo "$SSH_PRIVATE_KEY" > "$KEY_FILE"
+
+            ansible-playbook ansible/playbooks/base-setup.yml \
             --inventory ansible/inventory/dynamic_inventory.py \
             --limit "${{ matrix.server }}" \
-            --private-key <(echo "$SSH_PRIVATE_KEY")
+            --private-key "$KEY_FILE"
+
+            rm -f "$KEY_FILE"
