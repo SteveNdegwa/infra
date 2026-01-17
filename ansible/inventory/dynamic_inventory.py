@@ -20,6 +20,7 @@ for filename in os.listdir(servers_dir):
         inventory["_meta"]["hostvars"][name] = {
             "ansible_host": data.get("public_ip", name),
             "ansible_user": data["ssh_user"],
+            **{k: v for k, v in data.items() if k not in ("server_name", "ssh_user", "public_ip")}
         }
 
 print(json.dumps(inventory))
