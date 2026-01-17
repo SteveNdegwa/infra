@@ -47,4 +47,10 @@
         loop_var: app
       vars:
         extra_domains: "{{ hostvars[inventory_hostname].extra_domains | default([]) }}"
+  
+  handlers:
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded
 

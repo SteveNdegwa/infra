@@ -95,9 +95,3 @@
   command: nginx -t
   changed_when: false
   notify: Reload Nginx
-
-- handlers:
-  - name: Reload Nginx
-    service:
-      name: nginx
-      state: reloaded
