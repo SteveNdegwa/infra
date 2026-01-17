@@ -107,6 +107,7 @@ jobs:
           echo "===================="
 
           ansible-playbook ansible/playbooks/deploy-app.yml \
+            --inventory ansible/inventory/dynamic_inventory.py \
             --limit "${{ matrix.server }}" \
             --extra-vars "app_name=$app_name" \
             --extra-vars "env=${{ inputs.env }}" \

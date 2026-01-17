@@ -49,6 +49,7 @@ jobs:
     strategy:
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
       fail-fast: false
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,5 +69,12 @@ jobs:
         run: |
           echo "Configuring ${{ matrix.server }}"
           ansible-playbook ansible/playbooks/base-setup.yml \
+            --inventory ansible/inventory/dynamic_inventory.py \
             --limit "${{ matrix.server }}" \
             --private-key <(echo "$SSH_PRIVATE_KEY")
+
+          # Fail the job if no hosts were matched
+          if ansible-playbook ansible/inventory/dynamic_inventory.py --list-hosts --limit "${{ matrix.server }}" | grep -q "0 hosts"; then
+            echo "ERROR: No hosts matched for ${{ matrix.server }} — check public_ip or inventory"
+            exit 1
+          fi

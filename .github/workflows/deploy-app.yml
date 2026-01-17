@@ -100,7 +100,7 @@ jobs:
           # Append all secrets from payload
           echo '${{ toJson(github.event.client_payload.env_secrets) }}' | \
             jq -r 'to_entries[] | "\(.key)=\(.value)"' >> /tmp/.env
-            
+
       - name: Render final docker-compose
         run: |
           docker compose -f /tmp/docker-compose-raw.yml --env-file /tmp/.env config > /tmp/docker-compose.yml
@@ -115,6 +115,7 @@ jobs:
           env="${{ github.event.client_payload.env }}"
           echo "Deploying $app_name ($env) to ${{ matrix.server }}"
           ansible-playbook ansible/playbooks/deploy-app.yml \
+            --inventory ansible/inventory/dynamic_inventory.py \
             --extra-vars "target_server=${{ matrix.server }}" \
             --extra-vars "app_name=$app_name" \
             --extra-vars "env=$env" \
