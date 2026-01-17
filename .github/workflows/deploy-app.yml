@@ -56,18 +56,21 @@ jobs:
       - name: Find target servers for this app
         id: targets
         run: |
-            python3 << 'PY'
+            python3 <<'PY'
             import yaml, os
 
             # Get the app repository from the dispatch payload
             repo = "${{ github.event.client_payload.app_repo }}"
-            print("App repository from payload:", repo)  # <-- print it here
+            print("App repository from payload:", repo)
 
             servers = []
-            for f in os.listdir("ansible/data/servers"):
+            servers_dir = "ansible/data/servers"
+
+            for f in os.listdir(servers_dir):
                 if f.endswith(".yml"):
-                    with open(f"ansible/data/servers/{f}") as file:
+                    with open(os.path.join(servers_dir, f)) as file:
                         data = yaml.safe_load(file) or {}
+                        # Case-insensitive repo match
                         if any(app.get("repo", "").lower() == repo.lower() for app in data.get("apps", [])):
                             server_name = data.get("server_name")
                             if server_name:
