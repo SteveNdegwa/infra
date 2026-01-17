@@ -9,16 +9,11 @@
       apt:
         update_cache: yes
     
-    - name: Ensure Python3-pip is installed
+    - name: Install Docker Compose
       apt:
-        name: python3-pip
+        name: docker-compose
         state: present
         update_cache: yes
-        
-    - name: Install Docker Compose via pip
-      pip:
-        name: docker-compose
-        executable: pip3
 
     - name: Install common packages
       apt:
