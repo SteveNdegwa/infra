@@ -3,10 +3,10 @@ name: Base Server Configuration
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'ansible/data/**'
-      - 'ansible/playbooks/base-setup.yml'
-      - 'ansible/playbooks/generate-nginx.yml'
+    # paths:
+    #   - 'ansible/data/**'
+    #   - 'ansible/playbooks/base-setup.yml'
+    #   - 'ansible/playbooks/generate-nginx.yml'
 
 jobs:
   generate-matrix:
