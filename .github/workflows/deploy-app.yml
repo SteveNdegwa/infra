@@ -48,11 +48,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
     
-      - name: Debug repository payload
-        run: |
-            echo "Payload: ${{ toJson(github.event) }}"
-            echo "App repo: ${{ github.event.client_payload.app_repo }}"
-
       - name: Find target servers for this app
         id: targets
         run: |
@@ -96,6 +91,7 @@ jobs:
         run: |
           pip install ansible yq
           sudo apt-get update && sudo apt-get install -y jq docker-compose
+          ansible-galaxy collection install community.docker:>3.0.0
 
       - name: Decode docker-compose.yml
         run: |
