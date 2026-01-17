@@ -7,7 +7,7 @@ firewall_extra_ports: []
 
 apps:
   - name: zanaka
-    repo: https://github.com/stevendegwa/zanaka.git
+    repo: SteveNdegwa/zanaka
     environments:
       prod:
         domain: api.mchangohub.com 

@@ -68,7 +68,7 @@ jobs:
                 if f.endswith(".yml"):
                     with open(f"ansible/data/servers/{f}") as file:
                         data = yaml.safe_load(file) or {}
-                        if any(app.get("repo") == repo for app in data.get("apps", [])):
+                        if any(app.get("repo", "").lower() == repo.lower() for app in data.get("apps", [])):
                             server_name = data.get("server_name")
                             if server_name:
                                 servers.append(server_name)
