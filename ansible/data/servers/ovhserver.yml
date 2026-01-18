@@ -12,6 +12,13 @@ apps:
       prod:
         domain: api.mchangohub.com 
         port: 8000
+  
+  - name: zanaka-ui
+    repo: SteveNdegwa/zanaka-ui
+    environments:
+      prod:
+        domain: mchangohub.com 
+        port: 3000
 
 # Additional internal/admin tools exposed via subdomains
 # These are NOT full apps with their own repo/deploy — just reverse proxies
