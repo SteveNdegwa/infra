@@ -91,6 +91,7 @@ jobs:
         run: |
           pip install ansible yq
           sudo apt-get update && sudo apt-get install -y jq docker-compose
+          ansible-galaxy collection install community.docker:>3.0.0
 
       - name: Decode docker-compose.yml
         run: |

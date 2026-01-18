@@ -1,3 +1,4 @@
+---
 - name: Gather all domains that need SSL certificates
   set_fact:
     all_domains: >
@@ -16,15 +17,25 @@
         | unique
       }}
 
+- name: Remove default Nginx site to prevent Certbot pollution
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload Nginx
+
 - name: Obtain/renew Let's Encrypt certificates for all domains
   command: >
     certbot --nginx
-    -d {{ all_domains | join(' -d ') }}
-    --non-interactive
-    --agree-tos
-    --email admin@example.com
-    --expand
+      -d {{ all_domains | join(' -d ') }}
+      --non-interactive
+      --agree-tos
+      --email admin@example.com
+      --expand
+      --redirect
   when: all_domains | length > 0
+  changed_when: false
+  register: certbot_run
+  failed_when: certbot_run.rc != 0 and 'no changes were made' not in certbot_run.stderr | default('')
   ignore_errors: yes
   notify: Reload Nginx
 

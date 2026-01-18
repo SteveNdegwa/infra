@@ -31,10 +31,17 @@
       when: force_image_tag is defined
 
     - name: Deploy with Docker Compose (pull + always recreate)
-      ansible.builtin.command:
-        cmd: docker compose up -d --pull always --force-recreate --remove-orphans
-      args:
-        chdir: "{{ app_dir }}"
-      register: compose_result
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - docker-compose.yml
+        env_files:
+          - .env
+        state: present
+        pull: always
+        recreate: always
+        remove_orphans: true
+        remove_volumes: false
+        dependencies: true
+      register: compose_output
       changed_when: true
-      failed_when: compose_result.rc != 0
