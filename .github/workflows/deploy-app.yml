@@ -116,6 +116,12 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING: False
           SSH_PRIVATE_KEY: ${{ secrets[format('{0}', matrix.secret_name)] }}
         run: |
+
+          # Write key to a temp file
+          KEY_FILE=$(mktemp)
+          chmod 600 "$KEY_FILE"
+          echo "$SSH_PRIVATE_KEY" > "$KEY_FILE"
+
           app_name=$(basename "${{ github.event.client_payload.app_repo }}")
           env="${{ github.event.client_payload.env }}"
           echo "Deploying $app_name ($env) to ${{ matrix.server }}"
@@ -126,4 +132,4 @@ jobs:
             --extra-vars "env=$env" \
             --extra-vars "compose_file=/tmp/docker-compose.yml" \
             --extra-vars "env_file=/tmp/.env" \
-            --private-key <(echo "$SSH_PRIVATE_KEY")
+            --private-key "$KEY_FILE"
