@@ -89,14 +89,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-            pip install ansible yq
-            sudo apt-get update && sudo apt-get install -y jq
-            ansible-galaxy collection install community.docker:>3.0.0
-
-      - name: Set up Docker Compose plugin
-        uses: docker/setup-compose-action@v1
-        with:
-            version: latest
+          pip install ansible yq
+          sudo apt-get update && sudo apt-get install -y jq docker-compose
 
       - name: Decode docker-compose.yml
         run: |
