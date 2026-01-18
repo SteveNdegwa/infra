@@ -18,7 +18,7 @@ apps:
     environments:
       prod:
         domain: mchangohub.com 
-        port: 3000
+        port: 4000
 
 # Additional internal/admin tools exposed via subdomains
 # These are NOT full apps with their own repo/deploy — just reverse proxies
