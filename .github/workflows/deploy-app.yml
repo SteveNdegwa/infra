@@ -91,11 +91,12 @@ jobs:
         run: |
             pip install ansible yq
             sudo apt-get update && sudo apt-get install -y jq
-            sudo mkdir -p /usr/libexec/docker/cli-plugins
-            sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
-            -o /usr/libexec/docker/cli-plugins/docker-compose
-            sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
             ansible-galaxy collection install community.docker:>3.0.0
+
+      - name: Set up Docker Compose plugin
+        uses: docker/setup-compose-action@v1
+        with:
+            version: latest
 
       - name: Decode docker-compose.yml
         run: |
