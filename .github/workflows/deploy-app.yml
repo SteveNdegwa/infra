@@ -133,3 +133,4 @@ jobs:
             --extra-vars "compose_file=/tmp/docker-compose.yml" \
             --extra-vars "env_file=/tmp/.env" \
             --private-key "$KEY_FILE"
+            
