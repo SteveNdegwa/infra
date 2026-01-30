@@ -2,10 +2,11 @@
 - name: Generate and enable Nginx reverse proxy configs (main apps + extra tools)
   hosts: all
   become: yes
+
   tasks:
     # ────────────────────────────────────────────────
     # 1. Remove any default / catch-all Nginx config
-    #    This prevents the default welcome page from interfering
+    #    Ensures ONLY your custom configs are loaded
     # ────────────────────────────────────────────────
     - name: Remove default Nginx site symlink (sites-enabled)
       file:
@@ -19,8 +20,8 @@
         state: absent
       notify: Reload Nginx
 
-    # Optional: Clean up any leftover default symlinks or files
-    - name: Find and remove any lingering default-related configs
+    # Clean up any lingering default symlinks
+    - name: Find lingering default symlinks
       find:
         paths: /etc/nginx/sites-enabled
         patterns: 'default*'
@@ -35,6 +36,7 @@
 
     # ────────────────────────────────────────────────
     # 2. Collect ALL current domains for Certbot
+    #    (prod + stage from apps + extra tools)
     # ────────────────────────────────────────────────
     - name: Gather all domains that need SSL certificates
       set_fact:
@@ -57,13 +59,14 @@
           }}
 
     # ────────────────────────────────────────────────
-    # 3. Generate configs for MAIN APPS (prod/stage)
+    # 3. Generate & enable configs for MAIN APPS (prod + stage)
     # ────────────────────────────────────────────────
-    - name: Generate Nginx configs for main apps (prod and stage)
+    - name: Generate and enable Nginx configs for main apps
       loop: "{{ apps | default([]) }}"
       loop_control:
         loop_var: app
       block:
+        # Prod environment
         - name: Create Nginx config for {{ app.name }} - prod
           template:
             src: ../templates/nginx-app.j2
@@ -75,7 +78,7 @@
           when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
           notify: Reload Nginx
 
-        - name: Enable main app prod site
+        - name: Enable {{ app.name }} prod site
           file:
             src: "/etc/nginx/sites-available/{{ app.name }}-prod.conf"
             dest: "/etc/nginx/sites-enabled/{{ app.name }}-prod.conf"
@@ -83,7 +86,7 @@
           when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
           notify: Reload Nginx
 
-        # Repeat for stage if you use it
+        # Stage environment (exactly the same logic)
         - name: Create Nginx config for {{ app.name }} - stage
           template:
             src: ../templates/nginx-app.j2
@@ -95,7 +98,7 @@
           when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
           notify: Reload Nginx
 
-        - name: Enable main app stage site
+        - name: Enable {{ app.name }} stage site
           file:
             src: "/etc/nginx/sites-available/{{ app.name }}-stage.conf"
             dest: "/etc/nginx/sites-enabled/{{ app.name }}-stage.conf"
@@ -104,7 +107,7 @@
           notify: Reload Nginx
 
     # ────────────────────────────────────────────────
-    # 4. Generate and enable configs for EXTRA TOOLS
+    # 4. Generate & enable configs for EXTRA TOOLS
     # ────────────────────────────────────────────────
     - name: Generate Nginx configs for extra tools (flower, grafana, etc.)
       loop: "{{ extra_domains | default([]) }}"
@@ -131,7 +134,7 @@
     # ────────────────────────────────────────────────
     # 5. SSL Certificates – only for current domains
     # ────────────────────────────────────────────────
-    - name: Obtain/renew Let's Encrypt certificates for current domains only
+    - name: Obtain/renew Let's Encrypt certificates for current domains
       command: >
         certbot --nginx
         -d {{ all_domains | join(' -d ') }}
@@ -152,7 +155,7 @@
     # ────────────────────────────────────────────────
     # 6. Basic Auth – only if any tool needs it
     # ────────────────────────────────────────────────
-    - name: Create HTTP Basic Auth file if any extra domain needs protection
+    - name: Create HTTP Basic Auth file if needed
       htpasswd:
         path: /etc/nginx/.htpasswd
         name: admin
@@ -166,7 +169,7 @@
       notify: Reload Nginx
 
     # ────────────────────────────────────────────────
-    # 7. Final validation
+    # 7. Final validation & reload
     # ────────────────────────────────────────────────
     - name: Test Nginx configuration
       command: nginx -t
