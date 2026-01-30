@@ -105,4 +105,11 @@
     - name: Generate Nginx sites for all apps and environments
       include_tasks: ../tasks/generate-nginx.yml
       vars:
-        apps: "{{ hostvars[inve]()
+        apps: "{{ hostvars[inventory_hostname].apps | default([]) }}"
+        extra_domains: "{{ hostvars[inventory_hostname].extra_domains | default([]) }}"
+
+  handlers:
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded
