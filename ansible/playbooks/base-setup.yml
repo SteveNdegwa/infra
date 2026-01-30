@@ -33,12 +33,12 @@
         mode: '0644'
 
     - name: Set permissions on Docker GPG key
-      ansible.builtin.file:
+      file:
         path: /etc/apt/keyrings/docker.asc
         mode: '0644'
 
     - name: Add Docker official repository
-      ansible.builtin.apt_repository:
+      apt_repository:
         repo: >-
           deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else
                       'arm64' if ansible_architecture in ['aarch64', 'arm64'] else
@@ -65,20 +65,11 @@
         state: started
         enabled: yes
 
-    - name: Add current user to docker group (for non-root usage)
+    - name: Add current user to docker group
       user:
         name: "{{ ansible_user | default('ubuntu') }}"
         groups: docker
         append: yes
-
-    - name: Verify Docker Compose v2 plugin
-      command: docker compose version
-      register: compose_version
-      changed_when: false
-
-    - name: Debug Docker Compose version
-      debug:
-        msg: "Docker Compose installed: {{ compose_version.stdout | default('Not found') }}"
 
     - name: Install common packages
       apt:
@@ -114,11 +105,4 @@
     - name: Generate Nginx sites for all apps and environments
       include_tasks: ../tasks/generate-nginx.yml
       vars:
-        apps: "{{ hostvars[inventory_hostname].apps | default([]) }}"
-        extra_domains: "{{ hostvars[inventory_hostname].extra_domains | default([]) }}"
-
-  handlers:
-    - name: Reload Nginx
-      service:
-        name: nginx
-        state: reloaded
+        apps: "{{ hostvars[inve]()
