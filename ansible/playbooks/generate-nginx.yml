@@ -3,22 +3,22 @@
   hosts: all
   become: yes
 
-  # No separate "tasks:" key here — tasks go directly under the play
   tasks:
-    # 1. Remove default site (prevents welcome page / catch-all interference)
-    - name: Remove default Nginx site symlink (sites-enabled)
+    # Remove default Nginx site (prevents welcome page / catch-all)
+    - name: Remove default Nginx site symlink
       file:
         path: /etc/nginx/sites-enabled/default
         state: absent
       notify: Reload Nginx
 
-    - name: Remove default Nginx config file (sites-available)
+    - name: Remove default Nginx config file
       file:
         path: /etc/nginx/sites-available/default
         state: absent
       notify: Reload Nginx
 
-    - name: Find and remove lingering default symlinks
+    # Clean lingering default symlinks
+    - name: Find lingering default symlinks
       find:
         paths: /etc/nginx/sites-enabled
         patterns: 'default*'
@@ -31,8 +31,8 @@
       loop: "{{ default_symlinks.files | default([]) }}"
       notify: Reload Nginx
 
-    # 2. Collect all current domains for Certbot
-    - name: Gather all domains that need SSL certificates
+    # Gather all current domains for Certbot
+    - name: Gather all domains for SSL
       set_fact:
         all_domains: >
           {{
@@ -52,14 +52,14 @@
             | unique
           }}
 
-    # 3. Generate & enable configs for MAIN APPS (prod + stage)
-    - name: Generate and enable Nginx configs for main apps
+    # Generate & enable main apps (prod + stage)
+    - name: Generate and enable configs for main apps
       loop: "{{ apps | default([]) }}"
       loop_control:
         loop_var: app
       block:
         # Prod
-        - name: Create Nginx config for {{ app.name }} - prod
+        - name: Create config for {{ app.name }} - prod
           template:
             src: ../templates/nginx-app.j2
             dest: "/etc/nginx/sites-available/{{ app.name }}-prod.conf"
@@ -70,7 +70,7 @@
           when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
           notify: Reload Nginx
 
-        - name: Enable {{ app.name }} prod site
+        - name: Enable {{ app.name }} prod
           file:
             src: "/etc/nginx/sites-available/{{ app.name }}-prod.conf"
             dest: "/etc/nginx/sites-enabled/{{ app.name }}-prod.conf"
@@ -79,7 +79,7 @@
           notify: Reload Nginx
 
         # Stage
-        - name: Create Nginx config for {{ app.name }} - stage
+        - name: Create config for {{ app.name }} - stage
           template:
             src: ../templates/nginx-app.j2
             dest: "/etc/nginx/sites-available/{{ app.name }}-stage.conf"
@@ -90,7 +90,7 @@
           when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
           notify: Reload Nginx
 
-        - name: Enable {{ app.name }} stage site
+        - name: Enable {{ app.name }} stage
           file:
             src: "/etc/nginx/sites-available/{{ app.name }}-stage.conf"
             dest: "/etc/nginx/sites-enabled/{{ app.name }}-stage.conf"
@@ -98,8 +98,8 @@
           when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
           notify: Reload Nginx
 
-    # 4. Generate & enable configs for EXTRA TOOLS
-    - name: Generate Nginx configs for extra tools
+    # Extra tools
+    - name: Generate configs for extra tools
       loop: "{{ extra_domains | default([]) }}"
       loop_control:
         loop_var: item
@@ -121,8 +121,8 @@
       when: item.domain is defined and item.domain | length > 0
       notify: Reload Nginx
 
-    # 5. SSL Certificates – only current domains
-    - name: Obtain/renew Let's Encrypt certificates
+    # Certbot
+    - name: Obtain/renew certificates
       command: >
         certbot --nginx
         -d {{ all_domains | join(' -d ') }}
@@ -136,7 +136,7 @@
         'certificate is already up to date' not in (certbot.stderr | default(''))
       notify: Reload Nginx
 
-    # 6. Basic Auth
+    # Basic Auth
     - name: Create HTTP Basic Auth file if needed
       htpasswd:
         path: /etc/nginx/.htpasswd
@@ -150,7 +150,7 @@
       no_log: true
       notify: Reload Nginx
 
-    # 7. Final validation
+    # Test config
     - name: Test Nginx configuration
       command: nginx -t
       changed_when: false
