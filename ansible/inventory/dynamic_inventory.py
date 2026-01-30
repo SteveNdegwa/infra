@@ -6,8 +6,7 @@ import yaml
 BASE_DIR = os.path.dirname(__file__)
 servers_dir = os.path.abspath(os.path.join(BASE_DIR, "../data/servers"))
 
-inventory = {"_meta": {"hostvars": {}}}
-inventory["all"] = {"hosts": [], "children": []}
+inventory = {"_meta": {"hostvars": {}}, "all": {"hosts": [], "children": []}}
 
 for filename in os.listdir(servers_dir):
     if filename.endswith(".yml"):
