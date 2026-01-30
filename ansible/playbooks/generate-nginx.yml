@@ -1,105 +1,180 @@
 ---
-- name: Gather all domains that need SSL certificates
-  set_fact:
-    all_domains: >
-      {{
-        (app.environments.values() | list)
-        | map(attribute='domain')
-        | select('defined')
-        | select('truthy')
-        | list
-        +
-        (extra_domains | default([]))
-        | map(attribute='domain')
-        | select('defined')
-        | select('truthy')
-        | list
-        | unique
-      }}
+- name: Generate and enable Nginx reverse proxy configs (main apps + extra tools)
+  hosts: all
+  become: yes
+  tasks:
+    # ────────────────────────────────────────────────
+    # 1. Remove any default / catch-all Nginx config
+    #    This prevents the default welcome page from interfering
+    # ────────────────────────────────────────────────
+    - name: Remove default Nginx site symlink (sites-enabled)
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload Nginx
 
-- name: Generate Nginx configs for main app (prod and stage)
-  loop:
-    - { env: prod, domain: "{{ app.environments.prod.domain | default('') }}", port: "{{ app.environments.prod.port | default(8000) }}" }
-    - { env: stage, domain: "{{ app.environments.stage.domain | default('') }}", port: "{{ app.environments.stage.port | default(8000) }}" }
-  loop_control:
-    loop_var: item
-  template:
-    src: ../templates/nginx-site.j2
-    dest: "/etc/nginx/sites-available/{{ app.name }}-{{ item.env }}.conf"
-    mode: '0644'
-  when: item.domain | length > 0
-  notify: Reload Nginx
+    - name: Remove default Nginx config file (sites-available)
+      file:
+        path: /etc/nginx/sites-available/default
+        state: absent
+      notify: Reload Nginx
 
-- name: Enable site for main app (prod and stage)
-  loop:
-    - { env: prod, domain: "{{ app.environments.prod.domain | default('') }}" }
-    - { env: stage, domain: "{{ app.environments.stage.domain | default('') }}" }
-  loop_control:
-    loop_var: item
-  file:
-    src: "/etc/nginx/sites-available/{{ app.name }}-{{ item.env }}.conf"
-    dest: "/etc/nginx/sites-enabled/{{ app.name }}-{{ item.env }}.conf"
-    state: link
-  when: item.domain | length > 0
-  notify: Reload Nginx
+    # Optional: Clean up any leftover default symlinks or files
+    - name: Find and remove any lingering default-related configs
+      find:
+        paths: /etc/nginx/sites-enabled
+        patterns: 'default*'
+      register: default_symlinks
 
-- name: Generate Nginx configs for extra tools (flower, grafana, etc.)
-  loop: "{{ extra_domains | default([]) }}"
-  loop_control:
-    loop_var: item
-  template:
-    src: ../templates/nginx-extra.j2
-    dest: "/etc/nginx/sites-available/extra-{{ item.domain | replace('.', '-') }}.conf"
-    mode: '0644'
-  when: item.domain is defined and item.domain | length > 0
-  notify: Reload Nginx
+    - name: Delete lingering default symlinks
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ default_symlinks.files | default([]) }}"
+      notify: Reload Nginx
 
-- name: Enable extra tool sites
-  loop: "{{ extra_domains | default([]) }}"
-  loop_control:
-    loop_var: item
-  file:
-    src: "/etc/nginx/sites-available/extra-{{ item.domain | replace('.', '-') }}.conf"
-    dest: "/etc/nginx/sites-enabled/extra-{{ item.domain | replace('.', '-') }}.conf"
-    state: link
-  when: item.domain is defined and item.domain | length > 0
-  notify: Reload Nginx
+    # ────────────────────────────────────────────────
+    # 2. Collect ALL current domains for Certbot
+    # ────────────────────────────────────────────────
+    - name: Gather all domains that need SSL certificates
+      set_fact:
+        all_domains: >
+          {{
+            (apps | default([]))
+            | map(attribute='environments')
+            | flatten
+            | map(attribute='domain')
+            | select('defined')
+            | select('truthy')
+            | list
+            +
+            (extra_domains | default([]))
+            | map(attribute='domain')
+            | select('defined')
+            | select('truthy')
+            | list
+            | unique
+          }}
 
-- name: Obtain/renew Let's Encrypt certificates for all domains
-  command: >
-    certbot --nginx
-      -d {{ all_domains | join(' -d ') }}
-      --non-interactive
-      --agree-tos
-      --email admin@example.com
-      --expand
-      --redirect
-  when: all_domains | length > 0
-  changed_when: false
-  register: certbot_run
-  failed_when: >
-    certbot_run.rc != 0 and
-    'no changes were made' not in (certbot_run.stderr | default('')) and
-    'certificate is already up to date' not in (certbot_run.stderr | default(''))
-  ignore_errors: yes
-  notify: Reload Nginx
+    # ────────────────────────────────────────────────
+    # 3. Generate configs for MAIN APPS (prod/stage)
+    # ────────────────────────────────────────────────
+    - name: Generate Nginx configs for main apps (prod and stage)
+      loop: "{{ apps | default([]) }}"
+      loop_control:
+        loop_var: app
+      block:
+        - name: Create Nginx config for {{ app.name }} - prod
+          template:
+            src: ../templates/nginx-app.j2
+            dest: "/etc/nginx/sites-available/{{ app.name }}-prod.conf"
+            mode: '0644'
+          vars:
+            domain: "{{ app.environments.prod.domain | default('') }}"
+            port: "{{ app.environments.prod.port | default(8000) }}"
+          when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
+          notify: Reload Nginx
 
-- name: Create HTTP Basic Auth file if any extra domain needs protection
-  htpasswd:
-    path: /etc/nginx/.htpasswd
-    name: admin
-    password: "{{ nginx_basic_auth_password }}"
-    crypt_scheme: bcrypt
-    state: present
-  vars:
-    nginx_basic_auth_password: "{{ lookup('env', 'NGINX_BASIC_AUTH_PASSWORD') }}"
-  when: >
-    extra_domains is defined and
-    extra_domains | selectattr('basic_auth', 'equalto', true) | list | length > 0
-  no_log: true
-  notify: Reload Nginx
+        - name: Enable main app prod site
+          file:
+            src: "/etc/nginx/sites-available/{{ app.name }}-prod.conf"
+            dest: "/etc/nginx/sites-enabled/{{ app.name }}-prod.conf"
+            state: link
+          when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
+          notify: Reload Nginx
 
-- name: Test Nginx configuration
-  command: nginx -t
-  changed_when: false
-  notify: Reload Nginx
+        # Repeat for stage if you use it
+        - name: Create Nginx config for {{ app.name }} - stage
+          template:
+            src: ../templates/nginx-app.j2
+            dest: "/etc/nginx/sites-available/{{ app.name }}-stage.conf"
+            mode: '0644'
+          vars:
+            domain: "{{ app.environments.stage.domain | default('') }}"
+            port: "{{ app.environments.stage.port | default(8000) }}"
+          when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
+          notify: Reload Nginx
+
+        - name: Enable main app stage site
+          file:
+            src: "/etc/nginx/sites-available/{{ app.name }}-stage.conf"
+            dest: "/etc/nginx/sites-enabled/{{ app.name }}-stage.conf"
+            state: link
+          when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
+          notify: Reload Nginx
+
+    # ────────────────────────────────────────────────
+    # 4. Generate and enable configs for EXTRA TOOLS
+    # ────────────────────────────────────────────────
+    - name: Generate Nginx configs for extra tools (flower, grafana, etc.)
+      loop: "{{ extra_domains | default([]) }}"
+      loop_control:
+        loop_var: item
+      template:
+        src: ../templates/nginx-extra.j2
+        dest: "/etc/nginx/sites-available/extra-{{ item.domain | replace('.', '-') }}.conf"
+        mode: '0644'
+      when: item.domain is defined and item.domain | length > 0
+      notify: Reload Nginx
+
+    - name: Enable extra tool sites
+      loop: "{{ extra_domains | default([]) }}"
+      loop_control:
+        loop_var: item
+      file:
+        src: "/etc/nginx/sites-available/extra-{{ item.domain | replace('.', '-') }}.conf"
+        dest: "/etc/nginx/sites-enabled/extra-{{ item.domain | replace('.', '-') }}.conf"
+        state: link
+      when: item.domain is defined and item.domain | length > 0
+      notify: Reload Nginx
+
+    # ────────────────────────────────────────────────
+    # 5. SSL Certificates – only for current domains
+    # ────────────────────────────────────────────────
+    - name: Obtain/renew Let's Encrypt certificates for current domains only
+      command: >
+        certbot --nginx
+        -d {{ all_domains | join(' -d ') }}
+        --non-interactive
+        --agree-tos
+        --email admin@mchangohub.com
+        --expand
+        --redirect
+      when: all_domains | length > 0
+      register: certbot
+      changed_when: false
+      failed_when: >
+        certbot.rc != 0 and
+        'no changes were made' not in (certbot.stderr | default('')) and
+        'certificate is already up to date' not in (certbot.stderr | default(''))
+      notify: Reload Nginx
+
+    # ────────────────────────────────────────────────
+    # 6. Basic Auth – only if any tool needs it
+    # ────────────────────────────────────────────────
+    - name: Create HTTP Basic Auth file if any extra domain needs protection
+      htpasswd:
+        path: /etc/nginx/.htpasswd
+        name: admin
+        password: "{{ lookup('env', 'NGINX_BASIC_AUTH_PASSWORD') }}"
+        crypt_scheme: bcrypt
+        state: present
+      when: >
+        extra_domains is defined and
+        extra_domains | selectattr('basic_auth', 'equalto', true) | list | length > 0
+      no_log: true
+      notify: Reload Nginx
+
+    # ────────────────────────────────────────────────
+    # 7. Final validation
+    # ────────────────────────────────────────────────
+    - name: Test Nginx configuration
+      command: nginx -t
+      changed_when: false
+      notify: Reload Nginx
+
+  handlers:
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded
