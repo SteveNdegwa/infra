@@ -21,7 +21,9 @@
       copy:
         src: "{{ env_file }}"
         dest: "{{ app_dir }}/.env"
-        mode: '0600'
+        mode: '0644'
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
 
     - name: Force image tag override (for rollback)
       lineinfile:

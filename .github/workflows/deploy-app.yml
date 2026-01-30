@@ -72,7 +72,8 @@ jobs:
             PY
             
   deploy:
-    needs: [generate-matrix, prepare]
+    name: Deploy ${{ github.event.client_payload.app_repo | split('/') | last }} ${{ github.event.client_payload.env }} to ${{ matrix.server }}
+    needs: [ generate-matrix, prepare ]
     if: needs.prepare.outputs.servers != ''
     runs-on: ubuntu-latest
     strategy:
