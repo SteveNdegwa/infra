@@ -2,13 +2,15 @@
 - name: Base server setup and Nginx config
   hosts: all
   become: yes
+
   vars_files:
     - ../data/common.yml
+
   tasks:
     - name: Update apt cache
       apt:
         update_cache: yes
-    
+
     - name: Install dependencies for adding Docker repo
       apt:
         name:
@@ -29,7 +31,7 @@
         url: https://download.docker.com/linux/ubuntu/gpg
         dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
-      
+
     - name: Set permissions on Docker GPG key
       ansible.builtin.file:
         path: /etc/apt/keyrings/docker.asc
@@ -110,16 +112,13 @@
         mode: '0755'
 
     - name: Generate Nginx sites for all apps and environments
-      include_tasks: ../playbooks/generate-nginx.yml
-      loop: "{{ hostvars[inventory_hostname].apps | default([]) }}"
-      loop_control:
-        loop_var: app
+      include_tasks: ../tasks/generate-nginx.yml
       vars:
+        apps: "{{ hostvars[inventory_hostname].apps | default([]) }}"
         extra_domains: "{{ hostvars[inventory_hostname].extra_domains | default([]) }}"
-  
+
   handlers:
     - name: Reload Nginx
       service:
         name: nginx
         state: reloaded
-

@@ -1,0 +1,142 @@
+---
+- name: Remove default Nginx site symlink
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload Nginx
+
+- name: Remove default Nginx config file
+  file:
+    path: /etc/nginx/sites-available/default
+    state: absent
+  notify: Reload Nginx
+
+- name: Find lingering default symlinks
+  find:
+    paths: /etc/nginx/sites-enabled
+    patterns: 'default*'
+  register: default_symlinks
+
+- name: Delete lingering default symlinks
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ default_symlinks.files | default([]) }}"
+  notify: Reload Nginx
+
+- name: Gather all domains for SSL
+  set_fact:
+    all_domains: >
+      {{
+        (apps | default([]))
+        | map(attribute='environments')
+        | flatten
+        | map(attribute='domain')
+        | select('defined')
+        | select('truthy')
+        | list
+        +
+        (extra_domains | default([]))
+        | map(attribute='domain')
+        | select('defined')
+        | select('truthy')
+        | list
+        | unique
+      }}
+
+- name: Generate and enable configs for main apps
+  loop: "{{ apps | default([]) }}"
+  loop_control:
+    loop_var: app
+  block:
+    - name: Create config for {{ app.name }} - prod
+      template:
+        src: ../templates/nginx-app.j2
+        dest: "/etc/nginx/sites-available/{{ app.name }}-prod.conf"
+        mode: '0644'
+      vars:
+        domain: "{{ app.environments.prod.domain | default('') }}"
+        port: "{{ app.environments.prod.port | default(8000) }}"
+      when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
+      notify: Reload Nginx
+
+    - name: Enable {{ app.name }} prod
+      file:
+        src: "/etc/nginx/sites-available/{{ app.name }}-prod.conf"
+        dest: "/etc/nginx/sites-enabled/{{ app.name }}-prod.conf"
+        state: link
+      when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
+      notify: Reload Nginx
+
+    - name: Create config for {{ app.name }} - stage
+      template:
+        src: ../templates/nginx-app.j2
+        dest: "/etc/nginx/sites-available/{{ app.name }}-stage.conf"
+        mode: '0644'
+      vars:
+        domain: "{{ app.environments.stage.domain | default('') }}"
+        port: "{{ app.environments.stage.port | default(8000) }}"
+      when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
+      notify: Reload Nginx
+
+    - name: Enable {{ app.name }} stage
+      file:
+        src: "/etc/nginx/sites-available/{{ app.name }}-stage.conf"
+        dest: "/etc/nginx/sites-enabled/{{ app.name }}-stage.conf"
+        state: link
+      when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
+      notify: Reload Nginx
+
+- name: Generate configs for extra tools
+  loop: "{{ extra_domains | default([]) }}"
+  loop_control:
+    loop_var: item
+  template:
+    src: ../templates/nginx-extra.j2
+    dest: "/etc/nginx/sites-available/extra-{{ item.domain | replace('.', '-') }}.conf"
+    mode: '0644'
+  when: item.domain is defined and item.domain | length > 0
+  notify: Reload Nginx
+
+- name: Enable extra tool sites
+  loop: "{{ extra_domains | default([]) }}"
+  loop_control:
+    loop_var: item
+  file:
+    src: "/etc/nginx/sites-available/extra-{{ item.domain | replace('.', '-') }}.conf"
+    dest: "/etc/nginx/sites-enabled/extra-{{ item.domain | replace('.', '-') }}.conf"
+    state: link
+  when: item.domain is defined and item.domain | length > 0
+  notify: Reload Nginx
+
+- name: Obtain/renew certificates
+  command: >
+    certbot --nginx
+    -d {{ all_domains | join(' -d ') }}
+    --non-interactive --agree-tos --email admin@mchangohub.com --expand --redirect
+  when: all_domains | length > 0
+  register: certbot
+  changed_when: false
+  failed_when: >
+    certbot.rc != 0 and
+    'no changes were made' not in (certbot.stderr | default('')) and
+    'certificate is already up to date' not in (certbot.stderr | default(''))
+  notify: Reload Nginx
+
+- name: Create HTTP Basic Auth file if needed
+  htpasswd:
+    path: /etc/nginx/.htpasswd
+    name: admin
+    password: "{{ lookup('env', 'NGINX_BASIC_AUTH_PASSWORD') }}"
+    crypt_scheme: bcrypt
+    state: present
+  when: >
+    extra_domains is defined and
+    extra_domains | selectattr('basic_auth', 'equalto', true) | list | length > 0
+  no_log: true
+  notify: Reload Nginx
+
+- name: Test Nginx configuration
+  command: nginx -t
+  changed_when: false
+  notify: Reload Nginx
