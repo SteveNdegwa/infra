@@ -3,11 +3,9 @@
   hosts: all
   become: yes
 
+  # No separate "tasks:" key here — tasks go directly under the play
   tasks:
-    # ────────────────────────────────────────────────
-    # 1. Remove any default / catch-all Nginx config
-    #    Ensures ONLY your custom configs are loaded
-    # ────────────────────────────────────────────────
+    # 1. Remove default site (prevents welcome page / catch-all interference)
     - name: Remove default Nginx site symlink (sites-enabled)
       file:
         path: /etc/nginx/sites-enabled/default
@@ -20,8 +18,7 @@
         state: absent
       notify: Reload Nginx
 
-    # Clean up any lingering default symlinks
-    - name: Find lingering default symlinks
+    - name: Find and remove lingering default symlinks
       find:
         paths: /etc/nginx/sites-enabled
         patterns: 'default*'
@@ -34,10 +31,7 @@
       loop: "{{ default_symlinks.files | default([]) }}"
       notify: Reload Nginx
 
-    # ────────────────────────────────────────────────
-    # 2. Collect ALL current domains for Certbot
-    #    (prod + stage from apps + extra tools)
-    # ────────────────────────────────────────────────
+    # 2. Collect all current domains for Certbot
     - name: Gather all domains that need SSL certificates
       set_fact:
         all_domains: >
@@ -58,15 +52,13 @@
             | unique
           }}
 
-    # ────────────────────────────────────────────────
     # 3. Generate & enable configs for MAIN APPS (prod + stage)
-    # ────────────────────────────────────────────────
     - name: Generate and enable Nginx configs for main apps
       loop: "{{ apps | default([]) }}"
       loop_control:
         loop_var: app
       block:
-        # Prod environment
+        # Prod
         - name: Create Nginx config for {{ app.name }} - prod
           template:
             src: ../templates/nginx-app.j2
@@ -86,7 +78,7 @@
           when: app.environments.prod.domain is defined and app.environments.prod.domain | length > 0
           notify: Reload Nginx
 
-        # Stage environment (exactly the same logic)
+        # Stage
         - name: Create Nginx config for {{ app.name }} - stage
           template:
             src: ../templates/nginx-app.j2
@@ -106,10 +98,8 @@
           when: app.environments.stage.domain is defined and app.environments.stage.domain | length > 0
           notify: Reload Nginx
 
-    # ────────────────────────────────────────────────
     # 4. Generate & enable configs for EXTRA TOOLS
-    # ────────────────────────────────────────────────
-    - name: Generate Nginx configs for extra tools (flower, grafana, etc.)
+    - name: Generate Nginx configs for extra tools
       loop: "{{ extra_domains | default([]) }}"
       loop_control:
         loop_var: item
@@ -131,18 +121,12 @@
       when: item.domain is defined and item.domain | length > 0
       notify: Reload Nginx
 
-    # ────────────────────────────────────────────────
-    # 5. SSL Certificates – only for current domains
-    # ────────────────────────────────────────────────
-    - name: Obtain/renew Let's Encrypt certificates for current domains
+    # 5. SSL Certificates – only current domains
+    - name: Obtain/renew Let's Encrypt certificates
       command: >
         certbot --nginx
         -d {{ all_domains | join(' -d ') }}
-        --non-interactive
-        --agree-tos
-        --email admin@mchangohub.com
-        --expand
-        --redirect
+        --non-interactive --agree-tos --email admin@mchangohub.com --expand --redirect
       when: all_domains | length > 0
       register: certbot
       changed_when: false
@@ -152,9 +136,7 @@
         'certificate is already up to date' not in (certbot.stderr | default(''))
       notify: Reload Nginx
 
-    # ────────────────────────────────────────────────
-    # 6. Basic Auth – only if any tool needs it
-    # ────────────────────────────────────────────────
+    # 6. Basic Auth
     - name: Create HTTP Basic Auth file if needed
       htpasswd:
         path: /etc/nginx/.htpasswd
@@ -168,9 +150,7 @@
       no_log: true
       notify: Reload Nginx
 
-    # ────────────────────────────────────────────────
-    # 7. Final validation & reload
-    # ────────────────────────────────────────────────
+    # 7. Final validation
     - name: Test Nginx configuration
       command: nginx -t
       changed_when: false
