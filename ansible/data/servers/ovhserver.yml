@@ -13,12 +13,12 @@ apps:
         domain: mchangohub.com
         port: 8000
   
-  - name: zanaka-ui
-    repo: SteveNdegwa/zanaka-ui
-    environments:
-      prod:
-        domain: api.mchangohub.com
-        port: 4000
+#  - name: zanaka-ui
+#    repo: SteveNdegwa/zanaka-ui
+#    environments:
+#      prod:
+#        domain: api.mchangohub.com
+#        port: 4000
 
 
 # Additional internal/admin tools exposed via subdomains
