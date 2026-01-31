@@ -1,4 +1,8 @@
 ---
+# ============================================================
+# Remove default Nginx config to avoid catch-all behavior
+# ============================================================
+
 - name: Remove default Nginx site symlink
   file:
     path: /etc/nginx/sites-enabled/default
@@ -23,6 +27,11 @@
     state: absent
   loop: "{{ default_symlinks.files | default([]) }}"
   notify: Reload Nginx
+
+
+# ============================================================
+# Collect all domains for Certbot (apps + extra tools)
+# ============================================================
 
 - name: Gather all domains for SSL
   set_fact:
@@ -49,29 +58,39 @@
         | unique
       }}
 
-- name: Obtain or renew SSL certificates
+
+# ============================================================
+# Issue SSL certificates first (to avoid missing cert errors)
+# ============================================================
+
+- name: Obtain or renew SSL certificates for all domains
   command: >
-    certbot --nginx
+    certbot certonly --standalone
     -d {{ all_domains | join(' -d ') }}
     --non-interactive
     --agree-tos
     --email admin@mchangohub.com
-    --expand
-    --redirect
   when: all_domains | length > 0
   register: certbot
   changed_when: false
-  failed_when: >
-    certbot.rc != 0 and
-    'no changes were made' not in (certbot.stderr | default('')) and
-    'certificate is already up to date' not in (certbot.stderr | default(''))
+  failed_when: certbot.rc != 0
   notify: Reload Nginx
+
+
+# ============================================================
+# Generate Nginx configs per app (prod + stage handled inside)
+# ============================================================
 
 - name: Generate and enable Nginx configs for each app
   include_tasks: generate-nginx-app.yml
   loop: "{{ apps | default([]) }}"
   loop_control:
     loop_var: app
+
+
+# ============================================================
+# Extra / internal tools (Flower, Grafana, Portainer, etc.)
+# ============================================================
 
 - name: Generate configs for extra tools
   template:
@@ -91,6 +110,11 @@
   when: item.domain is defined and item.domain | length > 0
   notify: Reload Nginx
 
+
+# ============================================================
+# HTTP Basic Auth (only if requested by extra tools)
+# ============================================================
+
 - name: Create HTTP Basic Auth file if required
   htpasswd:
     path: /etc/nginx/.htpasswd
@@ -103,6 +127,34 @@
     extra_domains | selectattr('basic_auth', 'equalto', true) | list | length > 0
   no_log: true
   notify: Reload Nginx
+
+
+# ============================================================
+# Obtain SSL via Nginx plugin now (apply redirect/https)
+# ============================================================
+
+- name: Apply SSL via Nginx plugin for all domains
+  command: >
+    certbot --nginx
+    -d {{ all_domains | join(' -d ') }}
+    --non-interactive
+    --agree-tos
+    --email admin@mchangohub.com
+    --expand
+    --redirect
+  when: all_domains | length > 0
+  register: certbot_nginx
+  changed_when: false
+  failed_when: >
+    certbot_nginx.rc != 0 and
+    'no changes were made' not in (certbot_nginx.stderr | default('')) and
+    'certificate is already up to date' not in (certbot_nginx.stderr | default(''))
+  notify: Reload Nginx
+
+
+# ============================================================
+# Validate Nginx configuration
+# ============================================================
 
 - name: Test Nginx configuration
   command: nginx -t
