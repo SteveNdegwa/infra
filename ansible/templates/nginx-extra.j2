@@ -1,5 +1,8 @@
+# HTTP for ACME challenge and redirect to HTTPS
 server {
     listen 80;
+    listen [::]:80;
+
     server_name {{ item.domain }};
 
     location /.well-known/acme-challenge/ {
@@ -11,17 +14,31 @@ server {
     }
 }
 
+# HTTPS only if certificate exists
+{% set cert_path = "/etc/letsencrypt/live/" + item.domain %}
+{% if cert_path is exists %}
 server {
-    listen 443 ssl;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+
     server_name {{ item.domain }};
 
-    ssl_certificate /etc/letsencrypt/live/{{ item.domain }}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{{ item.domain }}/privkey.pem;
+    ssl_certificate     {{ cert_path }}/fullchain.pem;
+    ssl_certificate_key {{ cert_path }}/privkey.pem;
+
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_tickets off;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
 
     {% if item.basic_auth | default(false) %}
     auth_basic "Restricted Access";
     auth_basic_user_file /etc/nginx/.htpasswd;
     {% endif %}
+
+    client_max_body_size 50M;
 
     location / {
         proxy_pass http://localhost:{{ item.proxy_port }};
@@ -33,5 +50,10 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+
+        proxy_read_timeout 300;
+        proxy_connect_timeout 60;
+        proxy_send_timeout 300;
     }
 }
+{% endif %}
