@@ -59,7 +59,7 @@
 
 - name: Obtain or renew SSL certificates for all domains
   command: >
-    certbot certonly --standalone
+    certbot --nginx
     -d {{ all_domains | join(' -d ') }}
     --non-interactive
     --agree-tos
