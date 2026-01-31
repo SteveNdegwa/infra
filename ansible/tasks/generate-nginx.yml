@@ -51,17 +51,22 @@
 
 - name: Obtain or renew SSL certificates for all domains
   command: >
-    certbot certonly --standalone
+    certbot --nginx
     -d {{ all_domains | join(' -d ') }}
     --non-interactive
     --agree-tos
     --email admin@mchangohub.com
     --expand
+    --redirect
   when: all_domains | length > 0
   register: certbot
-  changed_when: false
-  failed_when: certbot.rc != 0
+  changed_when: "'Congratulations' in (certbot.stdout | default(''))"
+  failed_when: >
+    certbot.rc != 0 and
+    'no changes were made' not in (certbot.stderr | default('')) and
+    'certificate is already up to date' not in (certbot.stderr | default(''))
   notify: Reload Nginx
+
 
 - name: Generate and enable Nginx configs for each app
   include_tasks: generate-nginx-app.yml
