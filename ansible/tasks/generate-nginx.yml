@@ -28,53 +28,23 @@
   set_fact:
     all_domains: >
       {{
-        (
-          apps | default([])
-          | map(attribute='environments')
-          | map('dict2items')
-          | flatten
-          | map(attribute='value.domain')
-          | select('defined')
-          | select('truthy')
-          | list
-        )
+        (apps | default([]))
+        | map(attribute='environments')
+        | flatten
+        | map(attribute='domain')
+        | select('defined')
+        | select('truthy')
+        | list
         +
-        (
-          extra_domains | default([])
-          | map(attribute='domain')
-          | select('defined')
-          | select('truthy')
-          | list
-        )
+        (extra_domains | default([]))
+        | map(attribute='domain')
+        | select('defined')
+        | select('truthy')
+        | list
         | unique
       }}
 
-- name: Ensure /var/www/letsencrypt exists
-  file:
-    path: /var/www/letsencrypt
-    state: directory
-    owner: www-data
-    group: www-data
-    mode: '0755'
-
-- name: Obtain or renew SSL certificates for all domains
-  command: >
-    certbot --nginx
-    -d {{ all_domains | join(' -d ') }}
-    --non-interactive
-    --agree-tos
-    --email admin@mchangohub.com
-    --expand
-  when: all_domains | length > 0
-  register: certbot
-  changed_when: "'Congratulations' in (certbot.stdout | default(''))"
-  failed_when: >
-    certbot.rc != 0 and
-    'no renewals were attempted' not in (certbot.stdout | default('')) and
-    'Certificate not yet due for renewal' not in (certbot.stdout | default(''))
-  notify: Reload Nginx
-
-- name: Generate and enable Nginx configs for each app
+- name: Generate and enable configs for each app
   include_tasks: generate-nginx-app.yml
   loop: "{{ apps | default([]) }}"
   loop_control:
@@ -98,7 +68,21 @@
   when: item.domain is defined and item.domain | length > 0
   notify: Reload Nginx
 
-- name: Create HTTP Basic Auth file if required
+- name: Obtain/renew certificates
+  command: >
+    certbot --nginx
+    -d {{ all_domains | join(' -d ') }}
+    --non-interactive --agree-tos --email admin@mchangohub.com --expand --redirect
+  when: all_domains | length > 0
+  register: certbot
+  changed_when: false
+  failed_when: >
+    certbot.rc != 0 and
+    'no changes were made' not in (certbot.stderr | default('')) and
+    'certificate is already up to date' not in (certbot.stderr | default(''))
+  notify: Reload Nginx
+
+- name: Create HTTP Basic Auth file if needed
   htpasswd:
     path: /etc/nginx/.htpasswd
     name: admin
