@@ -70,6 +70,7 @@
     --non-interactive
     --agree-tos
     --email admin@mchangohub.com
+    --expand
   when: all_domains | length > 0
   register: certbot
   changed_when: false
